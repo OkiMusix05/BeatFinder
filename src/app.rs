@@ -1,9 +1,12 @@
-use std::{fs, io};
-use std::path::Path;
-use egui::{Sense, vec2, Window};
+use std::{fs::{self, File}, io::{self, BufReader}};
+use rodio::{Decoder, OutputStream, Sink, OutputStreamHandle};
+use std::thread;
+use egui::vec2;
+use rodio::decoder::DecoderError;
 
 enum Error<'e> {
     FsError(io::Error),
+    PlayError,
     Other(& 'e str)
 }
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -22,11 +25,19 @@ impl Files {
 pub struct MainApp {
     path: String,
     files: Files,
-    ///Additional windows
+    /// Additional windows
     #[serde(skip)]
     show_error: (bool, String ),
+    /// Track Variables
     #[serde(skip)]
-    files_shown: Vec<String>
+    files_shown: Vec<String>,
+    /// Audio Playback
+    #[serde(skip)]
+    stream: OutputStream,
+    #[serde(skip)]
+    stream_handle: OutputStreamHandle,
+    #[serde(skip)]
+    sink: Sink
 }
 impl Default for MainApp {
     fn default() -> Self {
@@ -36,10 +47,23 @@ impl Default for MainApp {
                 mp3: vec![],
                 project: vec![]
             },
-            ///Initialize additional windows
+            // Initialize additional windows
             show_error: (false, "".to_string()),
-            /// Files Shown
-            files_shown: vec![]
+            // Files Shown
+            files_shown: vec![],
+            stream: {
+                let (stream, _) = OutputStream::try_default().unwrap();
+                stream
+            },
+            stream_handle: {
+                let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+                stream_handle
+            },
+            sink: {
+                let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+                let sink = Sink::try_new(&stream_handle).unwrap();
+                sink
+            }
         }
     }
 }
@@ -51,6 +75,13 @@ impl MainApp {
         } else {
             Default::default()
         };
+        if app.path.ends_with("/") {
+            app.path = String::from(&app.path[0..app.path.len()-1]);
+            println!("{}", app.path);
+        }
+        //let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        (app.stream, app.stream_handle) = OutputStream::try_default().unwrap();
+        app.sink = Sink::try_new(&app.stream_handle).unwrap();
         // Initialize the list of mp3's
         app.files_shown = app.files.mp3.clone();
         app
@@ -64,7 +95,7 @@ impl eframe::App for MainApp {
                     ui.menu_button("File", |ui| {
                         if ui.button("Quit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        } else if ui.button("Scan Files").clicked() {
+                        } /*else if ui.button("Scan Files").clicked() {
                             get_files(&self.path, &mut self.files, &mut self.files_shown).unwrap_or_else(|e| {
                                 match e {
                                     Error::FsError(e) => {
@@ -75,6 +106,15 @@ impl eframe::App for MainApp {
                                     _ => {}
                                 }
                             });
+                        }*/
+                    });
+                    ui.menu_button("Sound", |ui| {
+                        if ui.button("Play").clicked() {
+                            self.sink.play();
+                        } else if ui.button("Pause").clicked() {
+                           self.sink.pause();
+                       } else if ui.button("Clear").clicked() {
+                            self.sink.clear();
                         }
                     });
                 }
@@ -103,7 +143,20 @@ impl eframe::App for MainApp {
                 .show(ui, |ui| {
                 for i in 1..self.files_shown.len()+1 {
                     ui.vertical(|ui| {
-                        ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../assets/Audio wave icon.png"))));
+                        let mut play = ui.add(egui::Button::image(egui::Image::new(egui::include_image!("../assets/Audio wave icon.png"))));
+                        if play.clicked() {
+                            match File::open(format!("{}/{}.mp3", self.path, &self.files_shown[i-1])) {
+                                Ok(file) => match Decoder::new(file) {
+                                    Ok(source) => {
+                                        self.sink.clear();
+                                        self.sink.append(source);
+                                        self.sink.play();
+                                    }
+                                    Err(e) => self.show_error = (true, e.to_string())
+                                },
+                                Err(e) => self.show_error = (true, e.to_string())
+                            }
+                        }
                         ui.label(&self.files_shown[i-1]);
                     });
                     if i%5 == 0{
@@ -112,8 +165,10 @@ impl eframe::App for MainApp {
                 }
             });
         });
-        /// Show the error window with its error message
+        // Show the error window with its error message
         if self.show_error.0 {
+            self.files.clear();
+            self.files_shown.clear();
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("immediate_viewport"),
                 egui::ViewportBuilder::default()
