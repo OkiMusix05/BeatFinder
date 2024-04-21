@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 use egui_extras;
 use eframe::egui;
+use egui::vec2;
 use beat_finder::MainApp;
 
 // When compiling natively:
@@ -10,7 +11,7 @@ fn main() -> eframe::Result<()> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 800.0])
+            .with_inner_size(vec2(738.0, 450.0))
             .with_resizable(false)
             .with_icon(
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..])

@@ -4,6 +4,6 @@ have to show them to an artist, find one to sell, or simply find a project they'
 can do it with ease.
 # Version Control
 - 0.001: Initial commit, still a test project
-- 0.002: Base to work
+- 0.002/0.003: Base to work
 ### Note
 Beat Finder uses EGUI under the hood and as such retains the licenses.
