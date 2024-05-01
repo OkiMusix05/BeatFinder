@@ -1,4 +1,4 @@
-use std::{fs::{self, File}, io::{self, BufReader}};
+use std::{fs::{self, File}, io::{self, BufReader}, process::{Command}, collections::HashMap};
 use rodio::{Decoder, OutputStream, Sink, OutputStreamHandle};
 use std::thread;
 use egui::vec2;
@@ -11,13 +11,31 @@ enum Error<'e> {
 }
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Files {
-    mp3: Vec<String>,
+    //mp3: Vec<String>,
+    mp3: HashMap<String, Vec<String>>,
     project: Vec<String>
 }
 impl Files {
     fn clear(&mut self) {
+        //self.mp3.clear();
         self.mp3.clear();
         self.project.clear();
+    }
+    fn append_tag(&mut self, key:&String, value:String) {
+        if let Some(vec) = self.mp3.get_mut(key) {
+            // Append the value to the vector
+            vec.push(value.to_string());
+        }
+    }
+    fn get_tags(&self) -> Vec<String> {
+        let all_tags = self.mp3.values().cloned().flatten().collect::<Vec<String>>();
+        let mut tags:Vec<String> = vec![];
+        for tag in all_tags {
+            if !tags.contains(&tag) && tag != "" {
+                tags.push(tag);
+            }
+        }
+        tags
     }
 }
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -25,12 +43,19 @@ impl Files {
 pub struct MainApp {
     path: String,
     files: Files,
+    global_tags: Vec<String>,
     /// Additional windows
     #[serde(skip)]
     show_error: (bool, String ),
     /// Track Variables
     #[serde(skip)]
     files_shown: Vec<String>,
+    #[serde(skip)]
+    now_playing: String,
+    #[serde(skip)]
+    now_tags: String,
+    // Track options
+    _scan_on_open: bool,
     /// Audio Playback
     #[serde(skip)]
     stream: OutputStream,
@@ -44,13 +69,20 @@ impl Default for MainApp {
         Self {
             path: String::from(""),
             files: Files {
-                mp3: vec![],
+                //mp3: vec![],
+                mp3: HashMap::new(),
                 project: vec![]
             },
             // Initialize additional windows
             show_error: (false, "".to_string()),
             // Files Shown
             files_shown: vec![],
+            now_playing: String::from(""),
+            now_tags: String::from(""),
+            global_tags: vec![],
+            // Settings
+            _scan_on_open: true,
+            // Music Playing sounds || Doesn't matter, gets updated in the new function
             stream: {
                 let (stream, _) = OutputStream::try_default().unwrap();
                 stream
@@ -77,13 +109,27 @@ impl MainApp {
         };
         if app.path.ends_with("/") {
             app.path = String::from(&app.path[0..app.path.len()-1]);
-            println!("{}", app.path);
         }
-        //let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        // Initialize the global sink for playing sounds
         (app.stream, app.stream_handle) = OutputStream::try_default().unwrap();
         app.sink = Sink::try_new(&app.stream_handle).unwrap();
+        /// Whenever the app opens, re-scan the files in the directory, if the option is set
+        if app._scan_on_open {
+            get_files(&app.path, &mut app.files, &mut app.files_shown).unwrap_or_else(|e| {
+                match e {
+                    Error::FsError(e) => {
+                        app.show_error.0 = true;
+                        app.show_error.1 = e.to_string();
+                    },
+                    Error::Other(e) => println!("{}", e),
+                    _ => {}
+                }
+            });
+        }
         // Initialize the list of mp3's
-        app.files_shown = app.files.mp3.clone();
+        //app.files_shown = app.files.mp3.clone();
+        println!("tags: {:?}", app.global_tags);
+        app.files_shown = app.files.mp3.keys().map(|s| s.to_string()).collect();
         app
     }
 }
@@ -95,7 +141,8 @@ impl eframe::App for MainApp {
                     ui.menu_button("File", |ui| {
                         if ui.button("Quit").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        } /*else if ui.button("Scan Files").clicked() {
+                        }
+                        /*else if ui.button("Scan Files").clicked() {
                             get_files(&self.path, &mut self.files, &mut self.files_shown).unwrap_or_else(|e| {
                                 match e {
                                     Error::FsError(e) => {
@@ -112,17 +159,70 @@ impl eframe::App for MainApp {
                         if ui.button("Play").clicked() {
                             self.sink.play();
                         } else if ui.button("Pause").clicked() {
-                           self.sink.pause();
+                            self.sink.pause();
                        } else if ui.button("Clear").clicked() {
                             self.sink.clear();
+                            self.now_playing = String::from("");
                         }
                     });
                 }
             });
         });
-        egui::SidePanel::left("SideBar").exact_width(150.0).show(ctx, |ui| {
-            ui.label("Directory");
-            ui.text_edit_singleline(&mut self.path);
+        egui::SidePanel::right("SideBar").exact_width(168.0).show(ctx, |ui| {
+            let mut title_track = "";
+            if &self.now_playing != "" {
+                title_track = &self.now_playing;
+            } else {
+                title_track = "No Track";
+            }
+            ui.heading(title_track);
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("See MP3").clicked() {
+                    if self.now_playing != "" {
+                        let file_path = format!("{}/{}.mp3", self.path, &self.now_playing);
+                        match Command::new("open").arg("-R").arg(file_path).output() {
+                            Ok(_) => {},
+                            Err(e) => panic!("Fuck")
+                        };
+                    }
+                };
+                if ui.button("Open project").clicked() {
+                    if self.now_playing != "" {
+                        let mut project:Option<String> = None;
+                        for file in &self.files.project {
+                            if file.contains(&format!("{}.", &self.now_playing)) {
+                                project = Some(String::from(file));
+                                break;
+                            }
+                        }
+                        if let Some(file) = project {
+                            let file_path = format!("{}/{}", self.path, file);
+                            match Command::new("open").arg("-R").arg(file_path).output() {
+                                Ok(_) => {},
+                                Err(e) => panic!("Fuck")
+                            };
+                        } else {
+                            // Prompt the error box
+                            panic!("No project file for that")
+                        }
+                    }
+                };
+            });
+            ui.add_space(4.0);
+            ui.heading("Tags:");
+            let tag_box = ui.add(egui::TextEdit::multiline(&mut self.now_tags)
+                .desired_width(145.0));
+            if tag_box.lost_focus() && self.now_playing != "" {
+                //self.files.append_tag(&self.now_playing, )
+                let mut tag_list:Vec<String> = self.now_tags.split("\n").map(|s| s.to_string()).collect();
+                for mut tag in &tag_list {
+                    tag = &tag.trim().to_string();
+                }
+                self.files.mp3.insert(String::from(&self.now_playing), tag_list);
+                self.global_tags = self.files.get_tags();
+            }
+            /*ui.text_edit_singleline(&mut self.path);
             if ui.add(egui::Button::new("Scan").min_size(vec2(150.0, 20.0))).clicked() {
                 get_files(&self.path, &mut self.files, &mut self.files_shown).unwrap_or_else(|e| {
                     match e {
@@ -135,7 +235,8 @@ impl eframe::App for MainApp {
                     }
                 });
             }
-            ui.separator();
+            ui.separator();*/
+
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Grid::new("MainGrid").num_columns(5).min_col_width(104.5).max_col_width(104.5)
@@ -151,6 +252,8 @@ impl eframe::App for MainApp {
                                         self.sink.clear();
                                         self.sink.append(source);
                                         self.sink.play();
+                                        self.now_playing = String::from(&self.files_shown[i-1]);
+                                        self.now_tags = self.files.mp3.get(&self.files_shown[i-1]).unwrap().join("\n");
                                     }
                                     Err(e) => self.show_error = (true, e.to_string())
                                 },
@@ -198,7 +301,7 @@ impl eframe::App for MainApp {
 }
 
 fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>) -> Result<(),Error<'e>> {
-    file_list.clear();
+    //file_list.clear();
     if path == "" {
         return Err(Error::Other("Directory is empty"));
     }
@@ -216,7 +319,9 @@ fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>
                         }
                     };
                     match ext {
-                        "mp3" => file_list.mp3.push(String::from(name)),
+                        "mp3" => if !file_list.mp3.contains_key(&name.to_string()) {
+                                file_list.mp3.insert(name.to_string(), vec![]);
+                            },
                         // Logic | FL Studio | Ableton | Musescore | Reaper | Cubase | Pro Tools
                         "logicx" | "flp" | "als" | "mscz" | "rpp" | "cpr" | "ptx" => file_list.project.push(file_name),
                         _ => {}
@@ -225,6 +330,6 @@ fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>
             }
         }
     }
-    *files_shown = file_list.mp3.clone();
+    *files_shown = file_list.mp3.keys().map(|s| String::from(s)).collect();
     Ok(())
 }

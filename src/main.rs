@@ -28,6 +28,9 @@ fn main() -> eframe::Result<()> {
         }),
     )
 }
+// NOTA para convertirlo en aplicación
+// correr:
+// cargo bundle --release --target=x86_64-apple-darwin
 
 // When compiling to web using trunk:
 #[cfg(target_arch = "wasm32")]

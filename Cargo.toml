@@ -5,10 +5,16 @@ authors = ["Oki"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 rust-version = "1.76"
+description = "Beat Tags organizer for producers"
 
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
+
+[package.metadata.bundle]
+name = "Beat Finder"
+identifier = "oki"
+icon = ["assets/icon-256.png"]
 
 [dependencies]
 egui = "0.27.0"

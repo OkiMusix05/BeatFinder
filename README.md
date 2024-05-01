@@ -7,5 +7,9 @@ can do it with ease.
 - 0.002/0.003: Base to work
 - 0.01: The player is able to detect all mp3's directly inside a folder (not inside sub-folders, though), and
 play them whenever you click on one. It also launches a simple error window whenever an error occurs.
+- 0.02: Right panel was added that shows the name of the current track being played, as well as providing buttons
+for seeing in finder the current mp3 or its project file (should be named the same as the mp3 and be in the same folder).
+Furthermore, it has a tag system in which you enter tags in the box (separated by newlines) and that tag is attached to
+the mp3. The program also keeps track of all the tags
 ### Note
 Beat Finder uses EGUI under the hood and as such retains the licenses.
