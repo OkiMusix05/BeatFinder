@@ -125,6 +125,7 @@ impl MainApp {
                     _ => {}
                 }
             });
+            app.global_tags = app.files.get_tags();
         }
         // Initialize the list of mp3's
         //app.files_shown = app.files.mp3.clone();
@@ -307,6 +308,7 @@ fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>
     }
     // Possible fail if this fails due to the error propagation here because I'm returning my custom error type
     let files = fs::read_dir(path).map_err(Error::FsError)?;
+    let mut file_vector:Vec<String> = vec![];
     for file in files {
         if let Ok(file) = file {
             if let Ok(file_name) = file.file_name().into_string() {
@@ -318,6 +320,7 @@ fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>
                             (name, ext)
                         }
                     };
+                    file_vector.push(String::from(name));
                     match ext {
                         "mp3" => if !file_list.mp3.contains_key(&name.to_string()) {
                                 file_list.mp3.insert(name.to_string(), vec![]);
@@ -330,6 +333,7 @@ fn get_files<'e>(path:&str, file_list: &mut Files, files_shown: &mut Vec<String>
             }
         }
     }
+    file_list.mp3.retain(|title, _| file_vector.contains(title));
     *files_shown = file_list.mp3.keys().map(|s| String::from(s)).collect();
     Ok(())
 }
